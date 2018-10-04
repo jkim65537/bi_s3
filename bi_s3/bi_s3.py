@@ -96,29 +96,41 @@ class S3BI(object):
         Args:
             df (pandas dataframe): the dataframe you want to write to s3
 
-            savepathpath (str): the filepath to s3 object
+            savepath (str): the filepath to s3 object
         Returns:
             NA
         Raises:
             NA
         """
+        if ".gz" in savepath.lower():
+            filetype = "gz"
+        else:
+            filetype = "csv"
+
         s3_prefix = "s3://{bn}/".format(bn=self.bucket_name)
         if s3_prefix in savepath:
             savepath = savepath.replace(s3_prefix, "")
 
         df = self._format_for_load(df)
         if sys.version_info >= (3,0):
-            csv_buffer = StringIO()
+            buffer = StringIO()
         else:
-            csv_buffer = BytesIO()
-        df.to_csv(csv_buffer, index=False)
+            buffer = BytesIO()
+        if filetype == "csv":
+            df.to_csv(buffer, index=False)
+        elif filetype == "gz":
+            json_str = df.to_json(compression="gzip", orient="records")
+            json_str = json_str.replace("[", "").replace("]", "").\
+                replace("},", "}\n") + "\n"
+            with gzip.GzipFile(fileobj=buffer, mode="w") as f:
+              f.write(json_str)
         response = self.client.put_object(
-        	Body=csv_buffer.getvalue(),
+        	Body=buffer.getvalue(),
         	ContentType='application/vnd.ms-excel',
         	Bucket=self.bucket_name,
         	Key=savepath,
         )
-        csv_buffer.close()
+        buffer.close()
 
     def _format_for_load(self, df):
         """Formats the dataframe for load operation to a SQL db
